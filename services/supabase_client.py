@@ -1,5 +1,5 @@
 import streamlit as st
-from supabase.client import Client, create_client
+from supabase import create_client, Client
 
 # ---------------------------------------------------
 # SUPABASE INITIALIZATION
