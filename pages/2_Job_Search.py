@@ -2,6 +2,7 @@ import streamlit as st
 from components.sidebar import show_sidebar
 from services.job_api import search_jobs
 from components.job_card import job_card
+from services.supabase_client import supabase_rest_query
 from services.utils import (
     save_job,
     is_job_saved,
@@ -20,7 +21,7 @@ from services.ai_engine import (
 # ----------------------------------------------------
 # ACCESS CONTROL
 # ----------------------------------------------------
-if "user" not in st.session_state or st.session_state.user is None:
+if "user" not in st.session_state or not st.session_state.user:
     st.error("You must log in to access this page.")
     st.stop()
 
@@ -31,16 +32,20 @@ show_sidebar(user)
 # PAGE HEADER
 # ----------------------------------------------------
 st.title("🔍 Global Remote Job Search (AI Enhanced)")
-st.write("Search remote jobs across the world and analyze them using AI tools.")
+st.write("Search remote jobs worldwide and analyze them using AI.")
 st.write("---")
 
 # ----------------------------------------------------
 # SEARCH INPUTS
 # ----------------------------------------------------
-query = st.text_input("Enter Job Title / Keyword", placeholder="e.g., Data Analyst remote")
-location_filter = st.text_input("Filter by Country (Optional)", placeholder="e.g., Nigeria, Africa, USA")
+query = st.text_input("Enter Job Title / Keyword", placeholder="e.g., Data Analyst")
+location_filter = st.text_input("Filter by Country (Optional)", placeholder="e.g., Nigeria, USA, Africa")
 remote_only = st.checkbox("Remote jobs only", value=True)
 num_results = st.selectbox("Number of pages to fetch", [1, 2, 3, 4, 5], index=0)
+
+# Initialize session_state storage for action handlers
+if "job_actions" not in st.session_state:
+    st.session_state.job_actions = {}
 
 # ----------------------------------------------------
 # SEARCH BUTTON
@@ -51,87 +56,74 @@ if st.button("Search Jobs"):
         st.stop()
 
     increment_jobs_searched(user["id"])
+    st.session_state.jobs = []  # reset results
+    st.session_state.job_actions = {}  # reset action memory
 
-    with st.spinner("Fetching job listings..."):
-        jobs = search_jobs(query, location_filter, remote_only, page=1, num_pages=num_results)
+    with st.spinner("Fetching remote jobs..."):
+        results = search_jobs(query, location_filter, remote_only, page=1, num_pages=num_results)
 
-    st.session_state["search_results"] = jobs
-    st.success(f"Found {len(jobs)} matching jobs.")
-    st.write("---")
+    st.session_state.jobs = results
+    st.success(f"Found {len(results)} jobs.")
+    st.rerun()
 
 # ----------------------------------------------------
 # SHOW SEARCH RESULTS
 # ----------------------------------------------------
-results = st.session_state.get("search_results", [])
+if "jobs" in st.session_state and st.session_state.jobs:
 
-for idx, job in enumerate(results):
+    jobs = st.session_state.jobs
 
-    job_id = str(job.get("job_id", f"job_{idx}"))
-    key_prefix = f"{job_id}_{idx}"
+    for idx, job in enumerate(jobs):
 
-    # Log category
-    log_job_category(user["id"], query, job.get("job_title", ""))
+        job_id = str(job.get("job_id", f"job_{idx}"))
 
-    # --- Job card ---
-    job_card(job, key_prefix=key_prefix, show_actions=False)
+        # Unique key namespace
+        key_prefix = f"job_{idx}"
 
-    # ----------------------------------------------------
-    # ACTION FORM (Fix: forms prevent full refresh!)
-    # ----------------------------------------------------
-    with st.form(key=f"actions_form_{key_prefix}"):
+        # Log category
+        log_job_category(user["id"], query, job.get("job_title", "Unknown"))
 
-        st.write("### Available Actions")
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            save_btn = st.form_submit_button("💾 Save Job")
-
-        with col2:
-            score_btn = st.form_submit_button("📊 Match Score")
-
-        with col3:
-            cover_btn = st.form_submit_button("✉️ Cover Letter")
-
-        st.write("")
-
-        # Additional AI Tools
-        elig_btn = st.form_submit_button("🌍 Country Eligibility")
-        skills_btn = st.form_submit_button("🧠 Required Skills")
+        # Render job card
+        job_card(job, key_prefix=key_prefix, show_actions=True)
 
         # ------------------------------------------------
-        # SAVE JOB
+        # PROCESS BUTTON ACTION
         # ------------------------------------------------
-        if save_btn:
+
+        # SAVE JOB BUTTON
+        if st.session_state.get(f"{key_prefix}_save_btn"):
             if is_job_saved(user["id"], job_id):
                 st.info("This job is already saved.")
             else:
                 save_job(user["id"], job)
                 increment_jobs_saved(user["id"])
-                st.success("Job saved successfully!")
+                st.success("Job saved successfully.")
+            st.session_state[f"{key_prefix}_save_btn"] = False
+            st.rerun()
 
-        # ------------------------------------------------
-        # MATCH SCORE TOOL
-        # ------------------------------------------------
-        if score_btn:
+        # AI MATCH SCORE
+        if st.session_state.get(f"{key_prefix}_match_btn"):
             st.subheader("📊 AI Job Match Score")
-            resume = st.text_area(f"Paste your resume below (Job ID: {job_id})", key=f"resume_score_{key_prefix}")
+            resume = st.text_area(
+                f"Paste your resume to evaluate job match (Job ID: {job_id})",
+                key=f"resume_match_{idx}",
+            )
 
             if resume:
-                with st.spinner("Evaluating match score..."):
+                with st.spinner("Analyzing resume..."):
                     result = job_match_score(job.get("job_description", ""), resume)
-
                 increment_ai_tools_used(user["id"])
                 st.code(result)
             else:
                 st.warning("Please paste your resume.")
 
-        # ------------------------------------------------
-        # COVER LETTER TOOL
-        # ------------------------------------------------
-        if cover_btn:
+        # AI COVER LETTER
+        if st.session_state.get(f"{key_prefix}_cover_btn"):
             st.subheader("✉️ AI Cover Letter Generator")
-            resume = st.text_area(f"Paste your resume below (Job ID: {job_id})", key=f"resume_cover_{key_prefix}")
+            resume = st.text_area(
+                f"Paste your resume to generate cover letter (Job ID: {job_id})",
+                key=f"resume_cover_{idx}",
+            )
 
             if resume:
                 with st.spinner("Generating cover letter..."):
@@ -139,7 +131,7 @@ for idx, job in enumerate(results):
                         job.get("job_title", ""),
                         job.get("employer_name", ""),
                         job.get("job_description", ""),
-                        resume
+                        resume,
                     )
                 increment_ai_tools_used(user["id"])
                 st.write(letter)
@@ -149,21 +141,19 @@ for idx, job in enumerate(results):
         # ------------------------------------------------
         # AI ELIGIBILITY EXTRACTION
         # ------------------------------------------------
-        if elig_btn:
-            st.subheader("🌍 Country Eligibility (AI Extracted)")
-            with st.spinner("Analyzing eligibility..."):
+        with st.expander("🌍 Country Eligibility (AI Extracted)"):
+            with st.spinner("Extracting eligibility..."):
                 eligibility = extract_eligibility(job.get("job_description", ""))
             increment_ai_tools_used(user["id"])
             st.code(eligibility)
 
         # ------------------------------------------------
-        # SKILL EXTRACTION
+        # AI SKILLS EXTRACTION
         # ------------------------------------------------
-        if skills_btn:
-            st.subheader("🧠 Required Skills (AI Extracted)")
+        with st.expander("🧠 Required Skills (AI Extracted)"):
             with st.spinner("Extracting skills..."):
                 skills = extract_skills(job.get("job_description", ""))
             increment_ai_tools_used(user["id"])
             st.code(skills)
 
-    st.write("----")
+        st.write("----")

@@ -1,7 +1,10 @@
 import streamlit as st
 from components.sidebar import show_sidebar
-from services.utils import get_user_stats
-from datetime import datetime
+from services.utils import (
+    get_user_stats,
+    create_user_stats
+)
+from services.supabase_client import supabase_rest_query
 
 # ----------------------------------------------------
 # ACCESS CONTROL
@@ -18,58 +21,59 @@ show_sidebar(user)
 # ----------------------------------------------------
 # PAGE HEADER
 # ----------------------------------------------------
-st.title("📊 Dashboard Overview")
-st.write("Track your job search activities and AI usage.")
+st.title("🏠 User Dashboard")
+st.write(f"Welcome, **{user['full_name']}**!")
 
 st.write("---")
 
 # ----------------------------------------------------
-# FETCH USER STATS
+# LOAD USER STATS (REST)
 # ----------------------------------------------------
 stats = get_user_stats(user["id"])
 
-# If stats do not exist (older users), create them
-if not stats:
+# If user has no stats record, create one
+if stats is None:
     create_user_stats(user["id"])
     stats = get_user_stats(user["id"])
 
+# Safety: Default values if partial record exists
 jobs_searched = stats.get("jobs_searched", 0)
 jobs_saved = stats.get("jobs_saved", 0)
-ai_tools_used = stats.get("ai_tools_used", 0)
+ai_used = stats.get("ai_tools_used", 0)
 
 # ----------------------------------------------------
-# LIVE METRICS
+# DISPLAY USER ANALYTICS
 # ----------------------------------------------------
+st.subheader("📊 Your Usage Statistics")
+
 col1, col2, col3 = st.columns(3)
 
-col1.metric("🔍 Jobs Searched", jobs_searched)
-col2.metric("💾 Jobs Saved", jobs_saved)
-col3.metric("🤖 AI Tools Used", ai_tools_used)
+col1.metric("Jobs Searched", jobs_searched)
+col2.metric("Jobs Saved", jobs_saved)
+col3.metric("AI Tools Used", ai_used)
 
 st.write("---")
 
 # ----------------------------------------------------
-# USER INFO SECTION
+# SHORTCUT LINKS
 # ----------------------------------------------------
-st.subheader("👤 User Profile Summary")
+st.subheader("🚀 Quick Actions")
 
-st.write(f"**Name:** {user.get('full_name')}")
-st.write(f"**Email:** {user.get('email')}")
-st.write(f"**Role:** {user.get('role')}")
-st.write(f"**Status:** {user.get('status')}")
+colA, colB, colC = st.columns(3)
+
+with colA:
+    if st.button("🔍 Search Jobs"):
+        st.switch_page("pages/2_Job_Search.py")
+
+with colB:
+    if st.button("💾 View Saved Jobs"):
+        st.switch_page("pages/3_Saved_Jobs.py")
+
+with colC:
+    if st.button("🤖 Try AI Tools"):
+        st.switch_page("pages/2_Job_Search.py")
 
 st.write("---")
 
-# ----------------------------------------------------
-# ACTIVITY SUMMARY
-# ----------------------------------------------------
-st.subheader("📈 Activity Insights")
-
-if jobs_searched == 0 and jobs_saved == 0 and ai_tools_used == 0:
-    st.info("No activity yet. Start searching for jobs to see insights here.")
-else:
-    st.success("You're actively using the platform. Keep going!")
-
-st.write("---")
-
-st.write("Last updated:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+# FOOTER
+st.caption("Powered by **Chumcred Job Engine** — AI-enhanced global job search platform.")

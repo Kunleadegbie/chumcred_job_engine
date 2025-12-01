@@ -1,40 +1,50 @@
 import streamlit as st
 from services.auth import login_user
-from components.sidebar import redirect_to_dashboard
+from components.sidebar import show_sidebar
 
+# ----------------------------------------------------
+# PAGE CONFIG
+# ----------------------------------------------------
 st.set_page_config(
     page_title="Chumcred Job Engine",
     page_icon="🌍",
-    layout="centered"
+    layout="wide"
 )
 
-# Initialize session state
-if "user" not in st.session_state:
-    st.session_state.user = None
+# ----------------------------------------------------
+# IF USER IS LOGGED IN → SHOW DASHBOARD
+# ----------------------------------------------------
+if "user" in st.session_state and st.session_state.user is not None:
+    user = st.session_state.user
+    show_sidebar(user)
 
-# If already logged in → go to Dashboard immediately
-if st.session_state.user:
-    redirect_to_dashboard()
+    st.title("Welcome to Chumcred Global Job Engine 🌍")
+    st.write("Use the menu on the left to explore your dashboard, search jobs, and access AI tools.")
+    st.stop()
 
-# --------------------------
-# LOGIN PAGE UI
-# --------------------------
-st.title("🔐 Chumcred Job Engine Login")
-st.write("Enter your credentials below to continue.")
+
+# ----------------------------------------------------
+# LOGIN PAGE
+# ----------------------------------------------------
+st.title("🔐 Login to Chumcred Job Engine")
 
 email = st.text_input("Email Address")
 password = st.text_input("Password", type="password")
 
 if st.button("Login"):
-    user, error = login_user(email, password)
-    if error:
-        st.error(error)
+    user = login_user(email, password)
+
+    if user is None:
+        st.error("❌ Invalid email or password.")
     else:
+        # Store USER DICTIONARY (not tuple)
         st.session_state.user = user
         st.success("Login successful! Redirecting...")
-        redirect_to_dashboard()
+        st.rerun()
 
-# Footer
+
+# ----------------------------------------------------
+# FOOTER
+# ----------------------------------------------------
 st.write("---")
 st.caption("Powered by Chumcred Limited © 2025")
-
