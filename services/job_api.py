@@ -1,58 +1,66 @@
-import requests
+import httpx
 import streamlit as st
 
-RAPIDAPI_KEY = st.secrets["RAPIDAPI_KEY"]
+RAPIDAPI_KEY = st.secrets.get("RAPIDAPI_KEY", "")
 
-API_URL = "https://jsearch.p.rapidapi.com/search"
+BASE_URL = "https://jsearch.p.rapidapi.com/search"
 
 HEADERS = {
-    "x-rapidapi-key": RAPIDAPI_KEY,
-    "x-rapidapi-host": "jsearch.p.rapidapi.com"
+    "X-RapidAPI-Key": RAPIDAPI_KEY,
+    "X-RapidAPI-Host": "jsearch.p.rapidapi.com"
 }
 
-def search_jobs(query, location="", remote_only=True, page=1, num_pages=1):
+def search_jobs(query, location_filter="", remote_only=True, page=1, num_pages=1):
     """
-    Search global jobs using JSearch (RapidAPI).
+    GLOBAL JOB SEARCH ENGINE (supports multiple countries + pagination)
+    Compatible with Job_Search.py
     """
 
-    params = {
-        "query": query,
-        "page": page,
-    }
+    all_results = []
 
-    # Optional filters
-    if location:
-        params["country"] = location
+    for current_page in range(page, page + num_pages):
 
-    if remote_only:
-        params["remote_jobs_only"] = "true"
+        params = {
+            "query": query,
+            "page": current_page,
+            "num_pages": 1
+        }
 
-    try:
-        res = requests.get(API_URL, headers=HEADERS, params=params)
-        res.raise_for_status()
-        data = res.json()
+        # Optional country/region filter
+        if location_filter:
+            params["country"] = location_filter
 
-        if "data" not in data:
-            return []
+        # Remote filter
+        if remote_only:
+            params["remote_jobs_only"] = "true"
 
-        jobs = []
+        try:
+            res = httpx.get(BASE_URL, headers=HEADERS, params=params, timeout=30)
 
-        for item in data["data"]:
-            jobs.append({
-                "job_id": item.get("job_id"),
-                "job_title": item.get("job_title"),
-                "employer_name": item.get("employer_name"),
-                "job_description": item.get("job_description"),
-                "job_country": item.get("job_country"),
-                "job_city": item.get("job_city"),
-                "job_posted_at": item.get("job_posted_at"),
-                "job_is_remote": item.get("job_is_remote"),
-                "job_apply_link": item.get("job_apply_link"),
-                "employer_logo": item.get("employer_logo")
-            })
+            if res.status_code != 200:
+                print("API ERROR:", res.text)
+                continue
 
-        return jobs
+            data = res.json()
+            items = data.get("data", [])
 
-    except Exception as e:
-        print("Error fetching jobs from API:", e)
-        return []
+            for job in items:
+                formatted = {
+                    "job_id": job.get("job_id"),
+                    "job_title": job.get("job_title"),
+                    "employer_name": job.get("employer_name"),
+                    "job_description": job.get("job_description"),
+                    "job_country": job.get("job_country"),
+                    "job_city": job.get("job_city"),
+                    "job_posted_at": job.get("job_posted_at"),
+                    "job_is_remote": job.get("job_is_remote"),
+                    "apply_link": job.get("apply_link") or job.get("job_apply_link"),
+                    "employer_logo": job.get("employer_logo"),
+                }
+                all_results.append(formatted)
+
+        except Exception as e:
+            print("Error fetching jobs from API:", e)
+            continue
+
+    return all_results
